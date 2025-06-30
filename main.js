@@ -1,29 +1,88 @@
-// importar dependencias como ES modules
 import fs from 'fs';
 import path from 'path';
+import dotenv from 'dotenv';
+dotenv.config({ path: './datos.env' });
+function IniciarLogs(){
+// Crear carpeta de logs si no existe
+const logsDir = path.resolve('logs');
+if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir);
+}
+
+// Crear nombre único para cada sesión
+function timestampFilename() {
+    const now = new Date();
+    return now.toISOString().replace(/[:]/g, '-').replace(/\..+/, '');
+}
+const logFilename = `log_${timestampFilename()}.log`;
+const logFilePath = path.join(logsDir, logFilename);
+
+// Crear stream de log
+const logStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+
+// Función para marca de tiempo legible
+function timestamp() {
+    return new Date().toISOString();
+}
+
+// Reemplazar console.log y console.error
+const originalLog = console.log;
+const originalErr = console.error;
+
+console.log = (...args) => {
+    const message = args.join(' ');
+    const line = `[${timestamp()}] [LOG] ${message}\n`;
+    logStream.write(line);
+    originalLog(...args);
+};
+
+console.error = (...args) => {
+    const message = args.join(' ');
+    const line = `[${timestamp()}] [ERROR] ${message}\n`;
+    logStream.write(line);
+    originalErr(...args);
+};
+
+// Manejo de salidas y errores
+process.on('uncaughtException', (err) => {
+    console.error('Excepción no capturada:', err);
+    logStream.end(() => process.exit(1));
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Promesa no manejada:', reason);
+    logStream.end(() => process.exit(1));
+});
+
+process.on('SIGINT', () => {
+    console.log('Programa detenido por el usuario (CTRL+C)');
+    logStream.end(() => process.exit(0));
+});}
+IniciarLogs();
 import crypto from 'crypto';
 import csv from 'csv-parser';
 import QRCode from 'qrcode';
 import { Client } from 'pg';
 import * as readline from "node:readline";
+import express from 'express';
 
 const baseOutputDir = './qrcodes';
 const qrPerItem = 5;
+let servidor = null
 
 
-// Crear instancia del cliente de PostgreSQL
-const client = new Client({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'deca',
-    password: '?',
-    port: 5432,
-});
 
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
+
+
+
+
+
+
+
 // Conectar y usar
 mostrarMenu()
 
@@ -34,11 +93,23 @@ mostrarMenu()
 
 //Funcion que muestra un menu  ¡¡¡¡ PUEDE QUE SE TENGA QUE TOCAR PARAMETROS MAS ADELANTE!!!!
 function mostrarMenu() {
+    // Crear instancia del cliente de PostgreSQL
+    let x= process.env.PG_PASS
+
+    const client = new Client({
+        user: 'postgres',
+        host: 'localhost',
+        database: 'deca',
+        password:process.env.PG_PASS,
+        port: 5432,
+    });
     rl.question(
         `\nBienvenido al menú de PoliEntradas\n` +
         `DECIDA QUÉ QUIERE HACER:\n` +
         `1) Insertar usuarios a la base de datos\n` +
         `2) Crear QR\n` +
+        `3) Encender servidor de validación QR\n` +
+        `4) APAGAR servidor de validación QR\n` +
         `Q) Salir\n> `,
         async (x) => {
             switch (x.toLowerCase()) {
@@ -47,6 +118,12 @@ function mostrarMenu() {
                     break;
                 case '2':
                     await crear_qr(client, "data.csv", 3);
+                    break;
+                case '3':
+                    iniciarServidor(3000)
+                    break;
+                case '4':
+                    detenerServidor(3000)
                     break;
                 case 'q':
                     console.log("Saliendo...");
@@ -130,6 +207,10 @@ async function crear_qr(client,archivo,x) {
                     fs.mkdirSync(itemFolderPath, {recursive: true});
                 }
                 try {
+                    let v=z.rows[0].id;
+                    let x= `INSERT INTO "QR" (hash, id_usuario) VALUES ('`+hash+`',`+v+`) `
+
+                    await client.query(x)
                     await QRCode.toFile(qrPath, hash);
 
                     console.log(`QR generado: ${qrPath}`);
@@ -142,4 +223,34 @@ async function crear_qr(client,archivo,x) {
             console.log('Todos los QR han sido generados.');
         });
     await client.end;
+}
+
+function iniciarServidor(puerto = 3000) {
+    if (servidor) {
+        console.log(`El servidor ya está en ejecución en el puerto ${puerto}`);
+        return;
+    }
+
+    const app = express();
+    app.use(express.json());
+        //ESTA SECIÓN SE DEBERA MODIFICAR PARA COMPROBAR EL HASH DEL QR CON LA BASE DE DATOS Y DEVOLVER TRUE SI LAS COMRPROBACIONES PERTINTENTES SON CORRECTAS
+    app.post('/api/val', (req, res) => {
+        console.log('JSON recibido:', req.body);
+
+        res.status(200).send({ mensaje: 'Datos recibidos correctamente' });
+    });
+    //escucha de puerto
+    servidor = app.listen(puerto, () => {
+        console.log(`Servidor escuchando en http://localhost:${puerto}`);
+    });
+}
+function detenerServidor() {
+    if (servidor) {
+        servidor.close(() => {
+            console.log('Servidor detenido correctamente.');
+            servidor = null;
+        });
+    } else {
+        console.log('No hay servidor en ejecución.');
+    }
 }
