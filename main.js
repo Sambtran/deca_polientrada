@@ -89,9 +89,11 @@ async function insertarDatos(client) {
         });
 }
 
+//funcion para crear QR // se guardan en carpeta qrcodes, el parametro archivo recibe un path donde busca el csv, el parametro x es los qr que queremos crear asociados a cada persona
 async function crear_qr(client,archivo,x) {
+   await client.connect();
     const csvFilePath = archivo.toString();
-    const qrPerItem = 5;
+    const qrPerItem = x;
 // Crea la carpeta base si no existe
     if (!fs.existsSync(baseOutputDir)) {
         fs.mkdirSync(baseOutputDir);
@@ -109,15 +111,24 @@ async function crear_qr(client,archivo,x) {
             const folderName = row.nombre?.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'item';
             const itemFolderPath = path.join(baseOutputDir, folderName);
 
-            // Crear carpeta por fila
-            if (!fs.existsSync(itemFolderPath)) {
-                fs.mkdirSync(itemFolderPath, {recursive: true});
-            }
+
 
             for (let i = 0; i < qrPerItem; i++) {
                 const hash = generateHash(JSON.stringify(row), i);
                 const qrPath = path.join(itemFolderPath, `qr_${i + 1}.png`);
+                const z = await client.query(
+                    'SELECT * FROM usuarios WHERE id = $1',
+                    [row.nombre]
+                );
 
+                if (z.rows.length === 0) {
+                    console.warn(`Usuario con id "${row.nombre}" no encontrado. Se omite generación de QR.`);
+                    return; // Salta al siguiente
+                }
+                // Crear carpeta por fila
+                if (!fs.existsSync(itemFolderPath)) {
+                    fs.mkdirSync(itemFolderPath, {recursive: true});
+                }
                 try {
                     await QRCode.toFile(qrPath, hash);
 
