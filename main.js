@@ -117,7 +117,9 @@ function mostrarMenu() {
                     await insertarDatos(client); // Asegúrate de que esta función sea async
                     break;
                 case '2':
-                    await crear_qr(client, "data.csv", 3);
+                    await rl.question("Cuantas vas a querer por persona",(x)=>{
+                        crear_qr(client,"data.csv",x)
+                    })
                     break;
                 case '3':
                     iniciarServidor(3000)
@@ -191,8 +193,9 @@ async function crear_qr(client,archivo,x) {
 
 
             for (let i = 0; i < qrPerItem; i++) {
-                const hash = generateHash(JSON.stringify(row), i);
-                const qrPath = path.join(itemFolderPath, `qr_${i + 1}.png`);
+
+                const hash = generateHash(JSON.stringify(row), Date.now().toString());
+                const qrPath = path.join(itemFolderPath, `qr_${hash}.png`);
                 const z = await client.query(
                     'SELECT * FROM usuarios WHERE id = $1',
                     [row.nombre]
@@ -217,15 +220,23 @@ async function crear_qr(client,archivo,x) {
                 } catch (err) {
                     console.error('Error generando QR:', err);
                 }
-            }
-        })
-        .on('end', () => {
-            console.log('Todos los QR han sido generados.');
-        });
-    await client.end;
-}
+            }            console.log('Todos los QR han sido generados.');
+            await client.end;
 
-function iniciarServidor(puerto = 3000) {
+        })
+    mostrarMenu();
+}
+async function preguntarModo() {
+    return new Promise((resolve) => {
+        rl.question("Indica el modo (por defecto = 1)\n 1) ELIMINAR QR EN VERIFICACIÓN\n 2) ENTRADA-SALIDA\n", (x) => {
+            let modo = 1;
+            if (x.trim() === '2') modo = 2;
+            resolve(modo);
+        });
+    });
+}
+async function iniciarServidor(puerto = 3000) {
+    let modo = await preguntarModo();
     if (servidor) {
         console.log(`El servidor ya está en ejecución en el puerto ${puerto}`);
         return;
@@ -233,15 +244,17 @@ function iniciarServidor(puerto = 3000) {
 
     const app = express();
     app.use(express.json());
-        //ESTA SECIÓN SE DEBERA MODIFICAR PARA COMPROBAR EL HASH DEL QR CON LA BASE DE DATOS Y DEVOLVER TRUE SI LAS COMRPROBACIONES PERTINTENTES SON CORRECTAS
+    //ESTA SECIÓN SE DEBERA MODIFICAR PARA COMPROBAR EL HASH DEL QR CON LA BASE DE DATOS Y DEVOLVER TRUE SI LAS COMRPROBACIONES PERTINTENTES SON CORRECTAS
     app.post('/api/val', (req, res) => {
         console.log('JSON recibido:', req.body);
 
-        res.status(200).send({ mensaje: 'Datos recibidos correctamente' });
+        res.status(200).send({mensaje: 'Datos recibidos correctamente'});
     });
     //escucha de puerto
     servidor = app.listen(puerto, () => {
         console.log(`Servidor escuchando en http://localhost:${puerto}`);
+        mostrarMenu();
+
     });
 }
 function detenerServidor() {
@@ -253,4 +266,5 @@ function detenerServidor() {
     } else {
         console.log('No hay servidor en ejecución.');
     }
+    mostrarMenu();
 }
